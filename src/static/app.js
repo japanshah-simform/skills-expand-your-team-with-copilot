@@ -568,6 +568,9 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
         `
         }
+        <button class="share-button" data-activity="${name}" aria-label="Share this activity">
+          🔗 Share
+        </button>
       </div>
     `;
 
@@ -587,7 +590,112 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
+    // Add click handler for share button
+    const shareButton = activityCard.querySelector(".share-button");
+    shareButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      shareActivity(name, details, shareButton);
+    });
+
     activitiesList.appendChild(activityCard);
+  }
+
+  // Tracks the cleanup function for the active share popover's outside-click listener
+  let activeSharePopoverCleanup = null;
+
+  // Function to share an activity
+  function shareActivity(name, details, triggerButton) {
+    const schedule = formatSchedule(details);
+    const spotsLeft = details.max_participants - details.participants.length;
+    const shareText = `Check out "${name}" at Mergington High School!\n\n${details.description}\n\nSchedule: ${schedule}\nSpots available: ${spotsLeft}`;
+    const shareUrl = window.location.href.split("?")[0];
+    const shareTitle = `${name} – Mergington High School Activities`;
+
+    // Use native Web Share API if available (mobile and some modern desktop browsers)
+    if (navigator.share) {
+      navigator
+        .share({ title: shareTitle, text: shareText, url: shareUrl })
+        .catch((err) => {
+          if (err.name !== "AbortError") {
+            console.error("Error sharing:", err);
+          }
+        });
+      return;
+    }
+
+    // Fallback: show a share popover with social links and copy button
+    // Remove any existing share popover and clean up its outside-click listener
+    const existingPopover = document.querySelector(".share-popover");
+    if (existingPopover) {
+      if (activeSharePopoverCleanup) {
+        document.removeEventListener("click", activeSharePopoverCleanup);
+        activeSharePopoverCleanup = null;
+      }
+      existingPopover.remove();
+      // If the popover was already open for this button, just close it
+      if (existingPopover.dataset.activity === name) return;
+    }
+
+    const encodedText = encodeURIComponent(shareText);
+    const encodedUrl = encodeURIComponent(shareUrl);
+
+    const popover = document.createElement("div");
+    popover.className = "share-popover";
+    popover.dataset.activity = name;
+    popover.innerHTML = `
+      <div class="share-popover-title">Share this activity</div>
+      <div class="share-popover-buttons">
+        <a class="share-social-btn share-twitter"
+           href="https://twitter.com/intent/tweet?text=${encodedText}&url=${encodedUrl}"
+           target="_blank" rel="noopener noreferrer" aria-label="Share on X (Twitter)">
+          𝕏
+        </a>
+        <a class="share-social-btn share-whatsapp"
+           href="https://wa.me/?text=${encodeURIComponent(shareText + "\n" + shareUrl)}"
+           target="_blank" rel="noopener noreferrer" aria-label="Share on WhatsApp">
+          💬
+        </a>
+        <a class="share-social-btn share-facebook"
+           href="https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}&quote=${encodedText}"
+           target="_blank" rel="noopener noreferrer" aria-label="Share on Facebook">
+          f
+        </a>
+        <button class="share-social-btn share-copy" aria-label="Copy link">
+          📋
+        </button>
+      </div>
+    `;
+
+    // Position popover above the trigger button
+    triggerButton.parentElement.style.position = "relative";
+    triggerButton.parentElement.appendChild(popover);
+
+    // Copy-to-clipboard handler
+    popover.querySelector(".share-copy").addEventListener("click", () => {
+      navigator.clipboard
+        .writeText(shareText + "\n\n" + shareUrl)
+        .then(() => {
+          const copyBtn = popover.querySelector(".share-copy");
+          copyBtn.textContent = "✅";
+          setTimeout(() => {
+            copyBtn.textContent = "📋";
+          }, 2000);
+        })
+        .catch(() => {
+          showMessage("Could not copy to clipboard.", "error");
+        });
+    });
+
+    // Close popover when clicking outside
+    function closePopover(e) {
+      if (!popover.contains(e.target) && e.target !== triggerButton) {
+        popover.remove();
+        document.removeEventListener("click", closePopover);
+        activeSharePopoverCleanup = null;
+      }
+    }
+    activeSharePopoverCleanup = closePopover;
+    document.addEventListener("click", closePopover);
   }
 
   // Event listeners for search and filter
